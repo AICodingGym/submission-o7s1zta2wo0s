@@ -1727,7 +1727,7 @@ def dot(*arrays, dims=None, **kwargs):
     return result.transpose(*all_dims, missing_dims="ignore")
 
 
-def where(cond, x, y):
+def where(cond, x, y, keep_attrs=None):
     """Return elements from `x` or `y` depending on `cond`.
 
     Performs xarray-like broadcasting across input arguments.
@@ -1743,6 +1743,9 @@ def where(cond, x, y):
         values to choose from where `cond` is True
     y : scalar, array, Variable, DataArray or Dataset
         values to choose from where `cond` is False
+    keep_attrs : bool, optional
+        Whether to copy attributes from `x` or, if `x` has no attributes,
+        from `y` to the output.
 
     Returns
     -------
@@ -1809,7 +1812,10 @@ def where(cond, x, y):
         equivalent methods
     """
     # alignment for three arguments is complicated, so don't support it yet
-    return apply_ufunc(
+    if keep_attrs is None:
+        keep_attrs = _get_keep_attrs(default=False)
+
+    result = apply_ufunc(
         duck_array_ops.where,
         cond,
         x,
@@ -1817,7 +1823,17 @@ def where(cond, x, y):
         join="exact",
         dataset_join="exact",
         dask="allowed",
+        keep_attrs=keep_attrs,
     )
+
+    # keep the attributes of x, or y if x has no attributes
+    if keep_attrs is True:
+        if hasattr(x, "attrs"):
+            result.attrs = x.attrs
+        elif hasattr(y, "attrs"):
+            result.attrs = y.attrs
+
+    return result
 
 
 def polyval(coord, coeffs, degree_dim="degree"):
