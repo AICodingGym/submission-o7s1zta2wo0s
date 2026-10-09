@@ -1743,9 +1743,10 @@ def where(cond, x, y, keep_attrs=None):
         values to choose from where `cond` is True
     y : scalar, array, Variable, DataArray or Dataset
         values to choose from where `cond` is False
-    keep_attrs : bool, optional
-        Whether to copy attributes from `x` or, if `x` has no attributes,
-        from `y` to the output.
+    keep_attrs : bool, str, callable, optional
+        How to treat attributes. If True, attributes from `x` are copied to
+        the output, or attributes from `y` if `x` has no attributes. If a
+        string or callable, passed through to :py:func:`xarray.apply_ufunc`.
 
     Returns
     -------
@@ -1815,7 +1816,11 @@ def where(cond, x, y, keep_attrs=None):
     if keep_attrs is None:
         keep_attrs = _get_keep_attrs(default=False)
 
-    result = apply_ufunc(
+    if keep_attrs is True:
+        # keep the attributes of x, or y if x has no attributes
+        keep_attrs = lambda attrs, context: attrs[1]
+
+    return apply_ufunc(
         duck_array_ops.where,
         cond,
         x,
@@ -1825,15 +1830,6 @@ def where(cond, x, y, keep_attrs=None):
         dask="allowed",
         keep_attrs=keep_attrs,
     )
-
-    # keep the attributes of x, or y if x has no attributes
-    if keep_attrs is True:
-        if hasattr(x, "attrs"):
-            result.attrs = x.attrs
-        elif hasattr(y, "attrs"):
-            result.attrs = y.attrs
-
-    return result
 
 
 def polyval(coord, coeffs, degree_dim="degree"):

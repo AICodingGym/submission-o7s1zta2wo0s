@@ -1,5 +1,5 @@
 diff --git a/xarray/core/computation.py b/xarray/core/computation.py
-index 9fe93c8..ce46cb3 100644
+index 9fe93c8..ac3c1d8 100644
 --- a/xarray/core/computation.py
 +++ b/xarray/core/computation.py
 @@ -1727,7 +1727,7 @@ def dot(*arrays, dims=None, **kwargs):
@@ -11,44 +11,68 @@ index 9fe93c8..ce46cb3 100644
      """Return elements from `x` or `y` depending on `cond`.
  
      Performs xarray-like broadcasting across input arguments.
-@@ -1743,6 +1743,9 @@ def where(cond, x, y):
+@@ -1743,6 +1743,10 @@ def where(cond, x, y):
          values to choose from where `cond` is True
      y : scalar, array, Variable, DataArray or Dataset
          values to choose from where `cond` is False
-+    keep_attrs : bool, optional
-+        Whether to copy attributes from `x` or, if `x` has no attributes,
-+        from `y` to the output.
++    keep_attrs : bool, str, callable, optional
++        How to treat attributes. If True, attributes from `x` are copied to
++        the output, or attributes from `y` if `x` has no attributes. If a
++        string or callable, passed through to :py:func:`xarray.apply_ufunc`.
  
      Returns
      -------
-@@ -1809,7 +1812,10 @@ def where(cond, x, y):
+@@ -1809,6 +1813,13 @@ def where(cond, x, y):
          equivalent methods
      """
      # alignment for three arguments is complicated, so don't support it yet
--    return apply_ufunc(
 +    if keep_attrs is None:
 +        keep_attrs = _get_keep_attrs(default=False)
 +
-+    result = apply_ufunc(
++    if keep_attrs is True:
++        # keep the attributes of x, or y if x has no attributes
++        keep_attrs = lambda attrs, context: attrs[1]
++
+     return apply_ufunc(
          duck_array_ops.where,
          cond,
-         x,
-@@ -1817,8 +1823,18 @@ def where(cond, x, y):
+@@ -1817,6 +1828,7 @@ def where(cond, x, y):
          join="exact",
          dataset_join="exact",
          dask="allowed",
 +        keep_attrs=keep_attrs,
      )
  
-+    # keep the attributes of x, or y if x has no attributes
-+    if keep_attrs is True:
-+        if hasattr(x, "attrs"):
-+            result.attrs = x.attrs
-+        elif hasattr(y, "attrs"):
-+            result.attrs = y.attrs
-+
-+    return result
-+
  
- def polyval(coord, coeffs, degree_dim="degree"):
-     """Evaluate a polynomial at specific values
+diff --git a/xarray/tests/test_computation.py b/xarray/tests/test_computation.py
+index c9a10b7..cb24b4d 100644
+--- a/xarray/tests/test_computation.py
++++ b/xarray/tests/test_computation.py
+@@ -1922,6 +1922,27 @@ def test_where() -> None:
+     assert_identical(expected, actual)
+ 
+ 
++def test_where_keep_attrs() -> None:
++    cond = xr.DataArray([True, False], dims="x", attrs={"source": "cond"})
++    x = xr.DataArray([1, 2], dims="x", attrs={"source": "x"})
++    y = xr.DataArray([3, 4], dims="x", attrs={"source": "y"})
++
++    assert xr.where(cond, x, y, keep_attrs=True).attrs == x.attrs
++    assert xr.where(cond, 1, y, keep_attrs=True).attrs == y.attrs
++    assert xr.where(cond, x, y, keep_attrs=False).attrs == {}
++    assert xr.where(cond, x, y, keep_attrs="override").attrs == cond.attrs
++
++    def combine_attrs(attrs, context):
++        return {"sources": tuple(attr["source"] for attr in attrs)}
++
++    assert xr.where(cond, x, y, keep_attrs=combine_attrs).attrs == {
++        "sources": ("cond", "x", "y")
++    }
++
++    with xr.set_options(keep_attrs=True):
++        assert xr.where(cond, x, y).attrs == x.attrs
++
++
+ @pytest.mark.parametrize("use_dask", [True, False])
+ @pytest.mark.parametrize("use_datetime", [True, False])
+ def test_polyval(use_dask, use_datetime) -> None:

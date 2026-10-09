@@ -1922,6 +1922,27 @@ def test_where() -> None:
     assert_identical(expected, actual)
 
 
+def test_where_keep_attrs() -> None:
+    cond = xr.DataArray([True, False], dims="x", attrs={"source": "cond"})
+    x = xr.DataArray([1, 2], dims="x", attrs={"source": "x"})
+    y = xr.DataArray([3, 4], dims="x", attrs={"source": "y"})
+
+    assert xr.where(cond, x, y, keep_attrs=True).attrs == x.attrs
+    assert xr.where(cond, 1, y, keep_attrs=True).attrs == y.attrs
+    assert xr.where(cond, x, y, keep_attrs=False).attrs == {}
+    assert xr.where(cond, x, y, keep_attrs="override").attrs == cond.attrs
+
+    def combine_attrs(attrs, context):
+        return {"sources": tuple(attr["source"] for attr in attrs)}
+
+    assert xr.where(cond, x, y, keep_attrs=combine_attrs).attrs == {
+        "sources": ("cond", "x", "y")
+    }
+
+    with xr.set_options(keep_attrs=True):
+        assert xr.where(cond, x, y).attrs == x.attrs
+
+
 @pytest.mark.parametrize("use_dask", [True, False])
 @pytest.mark.parametrize("use_datetime", [True, False])
 def test_polyval(use_dask, use_datetime) -> None:
